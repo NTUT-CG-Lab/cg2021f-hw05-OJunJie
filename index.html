@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>three.js webgl - loaders - MMD loader</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="main.css">
+    <style>
+        body {
+            background-color: #fff;
+            color: #444;
+        }
+
+        a {
+            color: #08f;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info"></div>
+
+    <script src="js/libs/ammo.wasm.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/t109598105/ScoreOutputer@latest/dist/scoreoutputer.min.js"></script>
+    <script>
+        var so = new ScoreOutputer("110598095");
+        so.installCSS(function () {
+            so.addChild("產生 42 個參數的 gui", 4, true);
+            so.addChild("按 A 鍵切換為上一隻、按 D 鍵為下一隻 ( gui 跟角色要同時切換 )", 4, true);
+            so.addChild("讀取作業 3 與 作業 4 儲存的 label 表將可控制的 Morph 生成在右邊的 gui", 2, true);
+
+            so.renderModal(
+                document.body,
+                'rgba(100,45,58,1)',
+                'white',
+                '15pt',
+                '15px',
+                dialogTitle = "自我評分表"
+            );
+
+            so.installDownloadBtn();
+
+            so.renderBtn(
+                document.querySelector("#info"),
+                "開啟自評表"
+            );
+        });
+    </script>
+    <script type="module">
+
+        import * as THREE from './build/three.module.js';
+        import { GUI } from './jsm/jsm/libs/dat.gui.module.js';
+        import { OrbitControls } from './jsm/jsm/controls/OrbitControls.js';
+        import { OutlineEffect } from './jsm/jsm/effects/OutlineEffect.js';
+        import { MMDLoader } from './jsm/jsm/loaders/MMDLoader.js';
+        import { MMDAnimationHelper } from './jsm/jsm/animation/MMDAnimationHelper.js';
+
+        let camera, scene, renderer, effect;
+        let mesh, helper;
+        let SCREEN_WIDTH = window.innerWidth;
+        let SCREEN_HEIGHT = window.innerHeight;
+        let aspect = SCREEN_WIDTH / SCREEN_HEIGHT;
+        let frustumSize = 30;
+        let data_json, data_json_length;
+        let loadstatus;
+        let reye_index = 0, leye_index = 0, head_index = 0;
+        let gui = new GUI();
+        var morphs;
+        let standardlist = {
+            eyebrow_troubled_left: 0, eyebrow_troubled_right: 0, eyebrow_angry_left: 0, eyebrow_angry_right: 0, eyebrow_serious_left: 0, eyebrow_serious_right: 0
+            , eyebrow_happy_left: 0, eyebrow_happy_right: 0, eyebrow_lowered_left: 0, eyebrow_lowered_right: 0, eyebrow_raised_left: 0, eyebrow_raised_right: 0, eye_wink_left: 0, eye_wink_right: 0
+            , eye_happy_wink_left: 0, eye_happy_wink_right: 0, eye_relaxed_left: 0, eye_relaxed_right: 0, eye_unimpressed_left: 0, eye_unimpressed_right: 0, eye_raised_lower_eyelid_left: 0,
+            eye_raised_lower_eyelid_right: 0, eye_surprised_left: 0, eye_surprised_right: 0, iris_small_left: 0, iris_small_right: 0, mouth_aaa: 0, mouth_iii: 0, mouth_uuu: 0, mouth_eee: 0, mouth_ooo: 0
+            , mouth_delta: 0, mouth_smirk: 0, mouth_raised_corner_left: 0, mouth_raised_corner_right: 0, mouth_lowered_corner_left: 0, mouth_lowered_corner_right: 0, iris_rotation_x: 0, iris_rotation_y: 0, head_x: 0, head_y: 0, head_z: 0
+        };
+        var model_count = 0;
+
+        Ammo().then(function (AmmoLib) {
+            Ammo = AmmoLib;
+            getjson();
+            animate();
+        });
+
+        function init() {
+            const container = document.createElement('div');
+            document.body.appendChild(container);
+
+            camera = new THREE.OrthographicCamera(frustumSize * aspect / - 2, frustumSize * aspect / 2, frustumSize / 2, frustumSize / - 2, 0.1, 1000);
+            camera.position.z = 25;
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+
+            const ambient = new THREE.AmbientLight(0x666666);
+            scene.add(ambient);
+
+            const directionalLight = new THREE.DirectionalLight(0x887766);
+            directionalLight.position.set(- 1, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+            effect = new OutlineEffect(renderer);
+
+
+
+            const modelFile = ['models/mmd/kizunaai/kizunaai.pmx',
+								'models/mmd/『天宮こころ(Kokoro Amamiya)』/『天宮こころ(Kokoro Amamiya)』.pmx',
+								'models/mmd/るいのれ式物述有栖_配布用フォルダ/物述有栖.pmx'
+			];
+            helper = new MMDAnimationHelper();
+
+            const loader = new MMDLoader();
+            load_model()
+
+            var body = document.body;
+            function keydown(e){
+                if(e.key == 'a' || e.key == 'A'){
+                    if(model_count != 0){
+                        model_count--;
+                    }else{
+                        model_count = 2
+                    }
+                    scene.remove(mesh);
+                    
+                    gui.removeFolder(morphs)
+                    load_model();
+                }
+                if(e.key == 'd' || e.key == 'D'){
+                    if(model_count != 2){
+                        model_count++;
+                    }else{
+                        model_count = 0;
+                    }
+                    scene.remove(mesh);
+                    gui.removeFolder(morphs)
+                    load_model();
+                }
+            }
+
+            function load_model(){
+                function onProgress(xhr) {
+                    if (xhr.lengthComputable) {
+                        const percentComplete = xhr.loaded / xhr.total * 100;
+                        console.log(Math.round(percentComplete, 2) + '% downloaded');
+                    }
+                }
+                loader.load(modelFile[model_count], function (object) {
+
+                    mesh = object;
+                    mesh.position.y = - 10;
+
+                    scene.add(mesh);
+
+                    findeye_index();                    
+                    initGui();
+                    loadstatus = 1;
+                }, onProgress, null);
+            }
+
+            body.addEventListener('keydown', keydown, false);
+            window.addEventListener('resize', onWindowResize);
+            const cameracontrols = new OrbitControls(camera, renderer.domElement);
+            cameracontrols.minDistance = 10;
+            cameracontrols.maxDistance = 100;
+            cameracontrols.enableRotate = false;
+        }
+
+        function onWindowResize() {
+            SCREEN_WIDTH = window.innerWidth;
+            SCREEN_HEIGHT = window.innerHeight;
+            aspect = SCREEN_WIDTH / SCREEN_HEIGHT;
+
+            effect.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+            camera.left = frustumSize * aspect / - 2;
+            camera.right = frustumSize * aspect / 2;
+            camera.top = frustumSize / 2;
+            camera.bottom = - frustumSize / 2;
+            camera.updateProjectionMatrix();
+        }
+        function initGui() {
+            gui = new GUI();
+
+            const controls = {};
+            const keys = [];
+
+            morphs = gui.addFolder('Morphs');
+
+            function initControls() {
+                for (const key in standardlist) {
+                    controls[key] = 0.0;
+                }
+            }
+
+            function initKeys() {
+                for (const key in standardlist) {
+                    keys.push(key);
+                }
+            }
+
+            function initMorphs() {
+                for (const key in standardlist) {
+                    var data = data_json.modellist[model_count][key];
+                    if (data == -1) {
+                        morphs.add(controls, key, 0.0, 0.0, 0.01).onChange(onChangeMorph);
+                    }
+                    else {
+                        morphs.add(controls, key, -1.0, 1.0, 0.01).onChange(onChangeMorph);
+                    }
+                }
+            }
+
+            function onChangeMorph() {
+                for(let i = 0; i < keys.length; i++){
+                    const key = keys[i];
+                    const value = controls[key];
+                    mesh.morphTargetInfluences[i] = value;
+
+                    if(key == "iris_rotation_x" || key == "iris_rotation_y"){
+                        Changeeye(value, key);
+                    }
+                    if(key == "head_x" || key == "head_y" || key == "head_z"){
+                        Changehead(value, key);
+                    }
+                }
+            }
+
+            function Changeeye(value, key1) {
+                var RXNA = THREE.MathUtils.degToRad(data_json.modellist[model_count].RXNA);
+                var RXPA = THREE.MathUtils.degToRad(data_json.modellist[model_count].RXPA);
+                var RYNA = THREE.MathUtils.degToRad(data_json.modellist[model_count].RYNA);
+                var RYPA = THREE.MathUtils.degToRad(data_json.modellist[model_count].RYPA);
+
+                var LXNA = THREE.MathUtils.degToRad(data_json.modellist[model_count].LXNA);
+                var LXPA = THREE.MathUtils.degToRad(data_json.modellist[model_count].LXPA);
+                var LYNA = THREE.MathUtils.degToRad(data_json.modellist[model_count].LYNA);
+                var LYPA = THREE.MathUtils.degToRad(data_json.modellist[model_count].LYPA);
+                var a = 1;
+                var b = -1;
+                var deltaxr = 0;
+                var deltaxl = 0;
+                var deltayr = 0;
+                var deltayl = 0;
+                
+
+                if(key1 == "iris_rotation_x" ){
+                    if(value > 0){
+                        deltaxr = RXPA / a
+                        deltaxl = LXPA / a
+                    }else if(value < 0){
+                        deltaxr = RXNA / b
+                        deltaxl = LXNA / b
+                    }
+                    mesh.skeleton.bones[reye_index].rotation.x = value * deltaxr;
+                    mesh.skeleton.bones[leye_index].rotation.x = value * deltaxl;
+                }else{
+                    if(value > 0){
+                        deltayr = RYPA / a
+                        deltayl = LYPA / a
+                    }else if(value < 0){
+                        deltayr = RYNA / b
+                        deltayl = LYNA / b
+                    }
+                    mesh.skeleton.bones[reye_index].rotation.y = value * deltayr;
+                    mesh.skeleton.bones[leye_index].rotation.y = value * deltayl;
+                }
+
+            }
+
+            function Changehead(value, key1) {
+                var headdelta = THREE.MathUtils.degToRad(15);
+                if(key1 == "head_x"){
+                    mesh.skeleton.bones[head_index].rotation.x = value * headdelta;
+
+                }else if(key1 == "head_y"){
+                    mesh.skeleton.bones[head_index].rotation.y = value * headdelta;
+                }
+                else{
+                    mesh.skeleton.bones[head_index].rotation.z = value * headdelta;
+                }
+            }
+
+            initControls();
+            initKeys();
+            initMorphs();
+            onChangeMorph();
+            morphs.open();
+
+        }
+        function findeye_index() {
+            for (let i = 0; i < mesh.skeleton.bones.length; i++) {
+                if (mesh.skeleton.bones[i].name == '左目') {                    
+                    leye_index = i;
+                }
+                else if (mesh.skeleton.bones[i].name == '右目') {
+                    reye_index = i;
+                }
+                else if (mesh.skeleton.bones[i].name == '頭') {
+                    head_index = i;
+                }
+            }
+        }
+        function getjson(){
+            var xmlhttp = new XMLHttpRequest();
+            var url = "model_data.json";
+            xmlhttp.onreadystatechange = function(){
+                if(this.readyState == 4 && this.status == 200){
+                    data_json = JSON.parse(this.responseText);
+                    data_json_length = Object.keys(data_json.modellist).length - 1;
+                    init();
+                }
+            };
+            xmlhttp.open("GET", url, true);
+            xmlhttp.send();
+        }
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            render();
+        }
+
+        function render() {
+            if(loadstatus == 1){
+                effect.render(scene, camera);
+            }
+        }
+
+    </script>
+
+</body>
+
+</html>
